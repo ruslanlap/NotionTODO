@@ -1,0 +1,1 @@
+export const YOUR_PAGE_ID = process.env.VITE_YOUR_PAGE_ID || '';
