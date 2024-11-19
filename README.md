@@ -6,6 +6,7 @@ A sleek and modern todo application built with React, TypeScript, and Vite, feat
 or use the version with browser caching without Notion integration
 https://sunny-biscotti-235f4c.netlify.app
 
+
 ## Table of Contents
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
