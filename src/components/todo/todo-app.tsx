@@ -1,49 +1,30 @@
-// src/components/todo/todo-app.tsx
-import { useEffect, useState } from "react";
+// src/components/todo/TodoApp.tsx
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Pencil,
   Plus,
   Trash2,
   Moon,
   Sun,
-  Clock,
   RefreshCw,
   MoreVertical,
 } from "lucide-react";
-
-// Import toast notifications from the sonner library
 import { toast } from "sonner";
-
-// Import date formatting functions from date-fns
 import { format } from "date-fns";
-
-// Import custom UI components (Button, Card, Checkbox, etc.)
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Clock } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-
-// Import DropdownMenu components for theme selection
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-// Import Input component for adding and editing todos
 import { Input } from "@/components/ui/input";
-
-// Import theme provider to handle light/dark theme logic
 import { useTheme } from "@/components/theme-provider";
-
-// Utility function for conditional class names
 import { cn } from "@/lib/utils";
-
-// Import Notion function
 import { notionApi } from "@/lib/notion";
-
-
-// Import Tooltip components for displaying additional info
 import {
   Tooltip,
   TooltipContent,
@@ -51,9 +32,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-
-
-// Define the structure of a Todo item
 interface Todo {
   id: string;
   text: string;
@@ -61,33 +39,19 @@ interface Todo {
   createdAt: number;
 }
 
-// Auto-refresh interval for syncing todos (30 seconds)
 const AUTO_REFRESH_INTERVAL = 30000;
 
-// Main component for the Todo application
 export default function TodoApp() {
-  // State to store the list of todos
   const [todos, setTodos] = useState<Todo[]>([]);
-
-  // State to hold the new todo text input
   const [newTodo, setNewTodo] = useState("");
-
-  // State to track which todo is being edited
   const [editingId, setEditingId] = useState<string | null>(null);
-
-  // State to show loading spinner while fetching todos
   const [isLoading, setIsLoading] = useState(true);
-
-  // State to store the timestamp of the last sync with Notion
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-
-  // Get the current theme (light, dark, or system) and the function to set it
   const { theme, setTheme } = useTheme();
 
-  // Function to fetch todos from the Notion API
-  const fetchTodos = async () => {
+  const fetchTodos = useCallback(async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       const notionTodos = await notionApi.fetchTodos();
       setTodos(notionTodos);
       setLastUpdate(new Date());
@@ -97,361 +61,463 @@ export default function TodoApp() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Fetch todos when the component mounts and set up an auto-refresh interval
-  useEffect(() => {
-    fetchTodos(); // Initial fetch
-    const intervalId = setInterval(fetchTodos, AUTO_REFRESH_INTERVAL); // Set up auto-refresh
-    return () => clearInterval(intervalId); // Clean up on component unmount
   }, []);
 
-  // Function to handle adding a new todo
+  useEffect(() => {
+    fetchTodos();
+    const intervalId = setInterval(fetchTodos, AUTO_REFRESH_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [fetchTodos]);
+
   const addTodo = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent form submission
-    if (!newTodo.trim()) return; // Do nothing if the input is empty
+    e.preventDefault();
+    if (!newTodo.trim()) return;
 
     try {
-      const todo = await notionApi.createTodo(newTodo); // Create a new todo in Notion
-      setTodos((prev) => [todo, ...prev]); // Prepend the new todo to the list
-      setNewTodo(""); // Clear the input field
-      toast.success("Todo added to Notion"); // Show success message
+      const todo = await notionApi.createTodo(newTodo);
+      setTodos((prev) => [todo, ...prev]);
+      setNewTodo("");
+      toast.success("Todo added to Notion");
     } catch (error) {
-      toast.error("Failed to add todo to Notion"); // Show error message if creation fails
+      toast.error("Failed to add todo to Notion");
     }
   };
 
-  // Function to toggle the completion status of a todo
-  const toggleTodo = async (id: string, completed: boolean) => {
+  const toggleTodo = async (id: string) => {
+    const todo = todos.find((t) => t.id === id);
+    if (!todo) return;
+
     try {
-      await notionApi.updateTodo(id, { completed: !completed }); // Update the todo in Notion
+      await notionApi.updateTodo(id, { completed: !todo.completed });
       setTodos((prev) =>
-        prev.map((todo) =>
-          todo.id === id ? { ...todo, completed: !completed } : todo,
-        ),
-      ); // Update the local state
+        prev.map((t) =>
+          t.id === id ? { ...t, completed: !t.completed } : t
+        )
+      );
     } catch (error) {
-      toast.error("Failed to update todo in Notion"); // Show error message if update fails
+      toast.error("Failed to update todo in Notion");
     }
   };
 
-  // Function to delete a todo
   const deleteTodo = async (id: string) => {
     try {
-      await notionApi.deleteTodo(id); // Delete the todo from Notion
-      setTodos((prev) => prev.filter((todo) => todo.id !== id)); // Remove the todo from the local state
-      toast.success("Todo deleted from Notion"); // Show success message
+      await notionApi.deleteTodo(id);
+      setTodos((prev) => prev.filter((t) => t.id !== id));
+      toast.success("Todo deleted from Notion");
     } catch (error) {
-      toast.error("Failed to delete todo from Notion"); // Show error message if deletion fails
+      toast.error("Failed to delete todo from Notion");
     }
   };
 
-  // Function to start editing a todo
-  const startEditing = (id: string) => {
-    setEditingId(id); // Set the id of the todo being edited
-  };
-
-  // Function to update the text of a todo
   const updateTodo = async (id: string, newText: string) => {
-    if (!newText.trim()) return; // Do nothing if the new text is empty
+    if (!newText.trim()) return;
     try {
-      await notionApi.updateTodo(id, { text: newText }); // Update the todo in Notion
+      await notionApi.updateTodo(id, { text: newText });
       setTodos((prev) =>
-        prev.map((todo) =>
-          todo.id === id ? { ...todo, text: newText } : todo,
-        ),
-      ); // Update the local state
-      setEditingId(null); // Exit editing mode
-      toast.success("Todo updated in Notion"); // Show success message
+        prev.map((t) => (t.id === id ? { ...t, text: newText } : t))
+      );
+      setEditingId(null);
+      toast.success("Todo updated in Notion");
     } catch (error) {
-      toast.error("Failed to update todo in Notion"); // Show error message if update fails
+      toast.error("Failed to update todo in Notion");
     }
   };
 
-  // Keyboard shortcut to focus the new todo input (Ctrl/⌘ + 1)
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === "1" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        document.getElementById("new-todo-input")?.focus(); // Focus the input field
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyPress); // Add event listener for key presses
-    return () => window.removeEventListener("keydown", handleKeyPress); // Clean up on component unmount
-  }, []);
-
-  // Utility function to format timestamps for display
-  const formatDate = (timestamp: number) => {
+  const formatDate = useCallback((timestamp: number) => {
     const date = new Date(timestamp);
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
     if (date.toDateString() === today.toDateString()) {
-      return `Today at ${format(date, "HH:mm")}`; // Show "Today" if the todo was created today
+      return `Today at ${format(date, "HH:mm")}`;
     } else if (date.toDateString() === yesterday.toDateString()) {
-      return `Yesterday at ${format(date, "HH:mm")}`; // Show "Yesterday" if it was created yesterday
+      return `Yesterday at ${format(date, "HH:mm")}`;
     } else {
-      return format(date, "MMM d, yyyy HH:mm"); // Otherwise, show the full date
+      return format(date, "MMM d, yyyy HH:mm");
     }
-  };
+  }, []);
 
-  // Render the TodoApp UI
+  const handleKeyPress = useCallback((e: KeyboardEvent) => {
+    if (e.key === "1" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      document.getElementById("new-todo-input")?.focus();
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [handleKeyPress]);
+
+  const sortedTodos = useMemo(
+    () => todos.sort((a, b) => b.createdAt - a.createdAt),
+    [todos]
+  );
+
   return (
-    <div className="min-h-screen bg-background p-2 sm:p-8">
-      <Card className="mx-auto max-w-3xl">
-        {/* Header section - адаптований для мобільних */}
-        <div className="border-b">
-          <div className="p-3 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              {/* Логотип і заголовок */}
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <svg
-                    viewBox="0 0 32 32"
-                    className="h-7 w-7 sm:h-8 sm:w-8"
-                    aria-hidden="true"
-                  >
-                    <rect
-                      x="4"
-                      y="4"
-                      width="24"
-                      height="24"
-                      rx="6"
-                      className="fill-primary"
-                    />
-                    <path
-                      d="M11 16L15 20L21 12"
-                      className="stroke-primary-foreground"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </svg>
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-bold">Clear Task</h1>
-              </div>
-
-              {/* Контроли - адаптовані для мобільних */}
-              <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4">
-                {/* Last update tooltip - спрощений для мобільних */}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex items-center gap-2 rounded-lg border border-border/40 p-2 sm:p-2.5 hover:border-border transition-all duration-200">
-                        <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
-                        <span className="text-xs sm:text-sm font-medium">
-                          {format(lastUpdate, "HH:mm:ss")} last update
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <span className="h-2 w-2 bg-green-500 rounded-full"></span>
-                        </div>
-
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-primary">
-                          {format(lastUpdate, "HH:mm")}
-                        </span>
-                        <span className="text-muted-foreground text-xs">
-                          {format(lastUpdate, "dd MMM yyyy")}
-                        </span>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                {/* Кнопки оновлення і теми */}
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={fetchTodos}
-                    disabled={isLoading}
-                    className="h-8 w-8 sm:h-10 sm:w-10"
-                  >
-                    <RefreshCw
-                      className={cn(
-                        "h-4 w-4 sm:h-5 sm:w-5",
-                        isLoading && "animate-spin",
-                      )}
-                    />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 sm:h-10 sm:w-10"
-                      >
-                        {theme === "dark" ? (
-                          <Moon className="h-4 w-4 sm:h-5 sm:w-5" />
-                        ) : (
-                          <Sun className="h-4 w-4 sm:h-5 sm:w-5" />
-                        )}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setTheme("light")}>
-                        Light
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setTheme("dark")}>
-                        Dark
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setTheme("system")}>
-                        System
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-3 sm:p-6">
-          {/* Форма додавання - адаптована для мобільних */}
-          <form onSubmit={addTodo} className="mb-4 sm:mb-6 flex gap-2">
+    <div className="min-h-screen bg-background p-4 sm:p-8">
+      <Card className="mx-auto max-w-3xl shadow-lg">
+        <Header
+          lastUpdate={lastUpdate}
+          isLoading={isLoading}
+          fetchTodos={fetchTodos}
+          theme={theme}
+          setTheme={setTheme}
+        />
+        <div className="p-4 sm:p-6">
+          <form onSubmit={addTodo} className="mb-6 flex gap-2">
             <Input
               id="new-todo-input"
               placeholder="Add a new todo (Ctrl/⌘+1)"
               value={newTodo}
               onChange={(e) => setNewTodo(e.target.value)}
-              className="flex-1 text-sm sm:text-base h-9 sm:h-10"
+              className="flex-1 h-10 text-base"
               disabled={isLoading}
+              aria-label="Add new todo"
             />
-            <Button type="submit" disabled={isLoading} className="h-9 sm:h-10">
-              <Plus className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Add</span>
+            <Button type="submit" disabled={isLoading} className="h-10">
+              <Plus className="h-5 w-5 mr-2" />
+              Add
             </Button>
           </form>
-
-          {/* Список todo - адаптований для мобільних */}
           <div className="space-y-2">
-            {todos.map((todo) => (
-              <div
+            {sortedTodos.map((todo) => (
+              <TodoItem
                 key={todo.id}
-                className={cn(
-                  "group flex items-center gap-2 rounded-lg border p-2 sm:p-3 transition-colors hover:bg-muted",
-                  todo.completed && "bg-muted",
-                )}
-              >
-                <Checkbox
-                  checked={todo.completed}
-                  onCheckedChange={() => toggleTodo(todo.id, todo.completed)}
-                  disabled={isLoading}
-                  className="h-4 w-4 sm:h-5 sm:w-5"
-                />
-
-                <div className="flex flex-1 flex-col gap-1 min-w-0">
-                  {editingId === todo.id ? (
-                    <Input
-                      autoFocus
-                      defaultValue={todo.text}
-                      onBlur={(e) => updateTodo(todo.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          updateTodo(todo.id, e.currentTarget.value);
-                        }
-                      }}
-                      disabled={isLoading}
-                      className="text-sm sm:text-base h-8 sm:h-9"
-                    />
-                  ) : (
-                    <>
-                      <span
-                        className={cn(
-                          "flex-1 text-sm sm:text-base truncate",
-                          todo.completed &&
-                            "text-muted-foreground line-through",
-                        )}
-                      >
-                        {todo.text}
-                      </span>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              <span className="truncate">
-                                {formatDate(todo.createdAt)}
-                              </span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Created: {format(todo.createdAt, "PPpp")}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </>
-                  )}
-                </div>
-
-                {/* Кнопки дій - адаптовані для мобільних */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 sm:hidden"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => startEditing(todo.id)}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => deleteTodo(todo.id)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Кнопки для десктопу */}
-                <div className="hidden sm:flex opacity-0 transition-opacity group-hover:opacity-100">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => startEditing(todo.id)}
-                    disabled={isLoading}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteTodo(todo.id)}
-                    disabled={isLoading}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+                todo={todo}
+                toggleTodo={toggleTodo}
+                deleteTodo={deleteTodo}
+                updateTodo={updateTodo}
+                editingId={editingId}
+                setEditingId={setEditingId}
+                formatDate={formatDate}
+                isLoading={isLoading}
+              />
             ))}
-
             {!isLoading && todos.length === 0 && (
-              <div className="text-center text-sm sm:text-base text-muted-foreground">
+              <div className="text-center text-base text-muted-foreground">
                 No todos yet. Add one to get started!
               </div>
             )}
-
             {isLoading && (
-              <div className="text-center text-sm sm:text-base text-muted-foreground">
+              <div className="text-center text-base text-muted-foreground">
                 Loading todos from Notion...
               </div>
             )}
           </div>
         </div>
+        <Footer />
       </Card>
+    </div>
+  );
+}
+
+interface HeaderProps {
+  lastUpdate: Date;
+  isLoading: boolean;
+  fetchTodos: () => void;
+  theme: string;
+  setTheme: (theme: string) => void;
+}
+
+function Header({
+  lastUpdate,
+  isLoading,
+  fetchTodos,
+  theme,
+  setTheme,
+}: HeaderProps) {
+  return (
+    <div className="border-b">
+      <div className="p-4 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <Logo />
+            <h1 className="text-3xl font-bold">Clear Task</h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <LastUpdate lastUpdate={lastUpdate} />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={fetchTodos}
+                disabled={isLoading}
+                className="h-10 w-10"
+                aria-label="Refresh Todos"
+              >
+                <RefreshCw
+                  className={cn("h-5 w-5", isLoading && "animate-spin")}
+                />
+              </Button>
+              <ThemeSwitcher theme={theme} setTheme={setTheme} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Logo() {
+  return (
+    <div className="relative">
+      <svg
+        viewBox="0 0 32 32"
+        className="h-8 w-8"
+        aria-hidden="true"
+      >
+        <rect
+          x="4"
+          y="4"
+          width="24"
+          height="24"
+          rx="6"
+          className="fill-primary"
+        />
+        <path
+          d="M11 16L15 20L21 12"
+          className="stroke-primary-foreground"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function LastUpdate({ lastUpdate }: { lastUpdate: Date }) {
+  return (
+    <TooltipProvider>
+      <Tooltip delayDuration={200}>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-3 rounded-xl bg-muted/40 px-4 py-2.5 hover:bg-muted/80 hover:text-black transition-all duration-200 cursor-default group">
+            <div className="flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5 text-foreground/70" />
+              <span className="text-sm font-medium tracking-tight text-foreground/70">
+                Last update at {format(lastUpdate, "HH:mm:ss")}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <span className="absolute h-1.5 w-1.5 bg-green-500 rounded-full animate-ping opacity-75" />
+                <span className="h-1.5 w-1.5 bg-green-500 rounded-full block" />
+              </div>
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-green-500">Live</span>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent 
+          side="bottom" 
+          align="center"
+          className="bg-popover/95 backdrop-blur-sm border-border/40 shadow-xl"
+        >
+          <div className="flex flex-col gap-1 p-1">
+            <div className="flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5 text-primary" />
+              <span className="font-medium text-base">
+                {format(lastUpdate, "HH:mm:ss")}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground ml-5">
+              {format(lastUpdate, "EEEE, dd MMMM yyyy")}
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+function ThemeSwitcher({
+  theme,
+  setTheme,
+}: {
+  theme: string;
+  setTheme: (theme: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10"
+          aria-label="Toggle Theme"
+        >
+          {theme === "dark" ? (
+            <Moon className="h-5 w-5" />
+          ) : (
+            <Sun className="h-5 w-5" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setTheme("light")}>
+          Light
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("dark")}>
+          Dark
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("system")}>
+          System
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+interface TodoItemProps {
+  todo: Todo;
+  toggleTodo: (id: string) => void;
+  deleteTodo: (id: string) => void;
+  updateTodo: (id: string, newText: string) => void;
+  editingId: string | null;
+  setEditingId: (id: string | null) => void;
+  formatDate: (timestamp: number) => string;
+  isLoading: boolean;
+}
+
+  function TodoItem({
+    todo,
+    toggleTodo,
+    deleteTodo,
+    updateTodo,
+    editingId,
+    setEditingId,
+    formatDate,
+    isLoading,
+  }: TodoItemProps) {
+    return (
+      <div
+        className={cn(
+          "group flex items-center gap-2 rounded-lg border p-3 transition-colors hover:bg-muted",
+          todo.completed && "bg-muted"
+        )}
+      >
+        <Checkbox
+          checked={todo.completed}
+          onCheckedChange={() => toggleTodo(todo.id)}
+          disabled={isLoading}
+          className="h-5 w-5"
+          aria-label={`Mark ${todo.text} as ${
+            todo.completed ? "incomplete" : "complete"
+          }`}
+        />
+        <div className="flex flex-1 flex-col gap-1 min-w-0">
+          {editingId === todo.id ? (
+            <Input
+              autoFocus
+              defaultValue={todo.text}
+              onBlur={(e) => updateTodo(todo.id, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  updateTodo(todo.id, e.currentTarget.value);
+                }
+              }}
+              disabled={isLoading}
+              className="h-9 text-base"
+              aria-label="Edit todo"
+            />
+          ) : (
+            <>
+              <span
+                className={cn(
+                  "text-base truncate",
+                  todo.completed && "text-muted-foreground line-through"
+                )}
+              >
+                {todo.text}
+              </span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground/80 transition-colors">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" strokeWidth={2.5} />
+                        <span className="font-medium tracking-tight">
+                          {formatDate(todo.createdAt)}
+                        </span>
+                      </div>
+                      <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                      <span className="text-muted-foreground/50">
+                        {format(new Date(todo.createdAt), 'EEEE')}
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent 
+                    side="top" 
+                    className="bg-popover/95 backdrop-blur-sm border-border/40 shadow-lg"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <div className="text-sm font-medium">
+                        {format(new Date(todo.createdAt), 'MMMM d, yyyy')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {format(new Date(todo.createdAt), 'EEEE, h:mm a')}
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </>
+          )}
+        </div>
+        <div className="hidden sm:flex opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setEditingId(editingId === todo.id ? null : todo.id)}
+            disabled={isLoading}
+            aria-label="Edit todo"
+          >
+            <Pencil className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => deleteTodo(todo.id)}
+            disabled={isLoading}
+            aria-label="Delete todo"
+          >
+            <Trash2 className="h-5 w-5 text-destructive" />
+          </Button>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="sm:hidden h-8 w-8"
+              aria-label="More options"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setEditingId(todo.id)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => deleteTodo(todo.id)}
+              className="text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    );
+  }
+
+function Footer() {
+  return (
+    <div className="border-t p-4 sm:p-6 text-center text-sm text-muted-foreground">
+      © {new Date().getFullYear()} Clear Task. All rights reserved.
     </div>
   );
 }
